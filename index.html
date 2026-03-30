@@ -60,12 +60,12 @@
     }
 
     :root{
-      --safe-top: 0mm;      /* ✅ default changed */
+      --safe-top: 0mm;
       --safe-right: 16mm;
       --safe-bottom: 24mm;
       --safe-left: 24mm;
-      --content-scale: 1.25; /* ✅ default changed */
-      --content-x: -25mm;    /* ✅ default changed */
+      --content-scale: 1.25;
+      --content-x: -25mm;
       --content-y: -15mm;
     }
 
@@ -151,9 +151,14 @@
 
       <div class="row g-3">
         <div class="col-md-6">
-          <label class="mb-2">ملف الورقة الرسمية (PNG) داخل نفس المجلد</label>
-          <input id="bgName" class="form-control" value="OFFICIAL.png" placeholder="مثال: ORN paper.png" />
-          <div class="hint">ضع ملف الـ PNG بجوار ملف الـ HTML بنفس الاسم المكتوب هنا.</div>
+          <label class="mb-2">صورة الخلفية (PNG)</label>
+          <div class="input-group">
+            <input id="bgName" class="form-control" value="OFFICIAL.png" placeholder="اسم ملف PNG داخل نفس المجلد" />
+            <button id="btnBgPick" class="btn btn-outline-primary" type="button">اختيار صورة</button>
+            <button id="btnBgReset" class="btn btn-outline-secondary" type="button">إرجاع الافتراضي</button>
+          </div>
+          <input id="bgFile" type="file" accept="image/png" hidden />
+          <div class="hint">الافتراضي: OFFICIAL.png. يمكنك اختيار PNG آخر وسيتم استخدامه فوراً في الطباعة.</div>
         </div>
 
         <div class="col-md-6">
@@ -283,6 +288,9 @@
 
     const dom = {
       bgName: $('bgName'),
+      bgFile: $('bgFile'),
+      btnBgPick: $('btnBgPick'),
+      btnBgReset: $('btnBgReset'),
       pdfInput: $('pdfInput'),
       safeTop: $('safeTop'),
       safeRight: $('safeRight'),
@@ -314,6 +322,22 @@
       dom.statusDiag.textContent = text;
     }
 
+    // ===== Background PNG selection (default + optional override) =====
+    const DEFAULT_BG = 'OFFICIAL.png';
+    let bgObjectUrl = null;
+
+    function getBackgroundSrc(){
+      if (bgObjectUrl) return bgObjectUrl;
+      const name = (dom.bgName?.value || '').trim();
+      return name || DEFAULT_BG;
+    }
+
+    function setBackgroundToDefault(){
+      try{ if (bgObjectUrl) URL.revokeObjectURL(bgObjectUrl); }catch(e){}
+      bgObjectUrl = null;
+      if (dom.bgName) dom.bgName.value = DEFAULT_BG;
+    }
+
     function clamp(n, a, b){ return Math.min(b, Math.max(a, n)); }
 
     function applyVars(){
@@ -331,11 +355,41 @@
       document.documentElement.classList.toggle('hide-page-no', !on);
     }
 
+    // UI events
     ['safeTop','safeRight','safeBottom','safeLeft','contentScale','contentX','contentY'].forEach(k => dom[k].addEventListener('input', applyVars));
     if (dom.showPageNo) dom.showPageNo.addEventListener('change', applyPageNoToggle);
 
+    // Background picker
+    if (dom.btnBgPick && dom.bgFile){
+      dom.btnBgPick.addEventListener('click', () => dom.bgFile.click());
+    }
+    if (dom.bgFile){
+      dom.bgFile.addEventListener('change', (e) => {
+        const f = e.target.files && e.target.files[0];
+        if (!f) return;
+        if (!String(f.type || '').includes('png')){
+          setDiag('يرجى اختيار صورة PNG فقط');
+          try{ e.target.value = ''; }catch(_e){}
+          return;
+        }
+        try{ if (bgObjectUrl) URL.revokeObjectURL(bgObjectUrl); }catch(_e){}
+        bgObjectUrl = URL.createObjectURL(f);
+        setStatus('تم اختيار خلفية PNG ✅', f.name);
+        setDiag('');
+        try{ e.target.value = ''; }catch(_e){}
+      });
+    }
+    if (dom.btnBgReset){
+      dom.btnBgReset.addEventListener('click', () => {
+        setBackgroundToDefault();
+        setStatus('تم إرجاع الخلفية الافتراضية ✅', DEFAULT_BG);
+        setDiag('');
+      });
+    }
+
     applyVars();
     applyPageNoToggle();
+    setBackgroundToDefault();
 
     // Official-style module loading (local first)
     const localPdfModule = './pdf.mjs';
@@ -355,8 +409,7 @@
       throw new Error('pdfjsLib not found');
     }
 
-    // Remove-white algorithm (preserve colors):
-    // Remove pixels close to white AND with low saturation.
+    // Remove-white algorithm (preserve colors): remove near-white & low-saturation pixels
     function removeWhiteBackground(ctx, w, h, threshold, softness, satLimit){
       const img = ctx.getImageData(0, 0, w, h);
       const d = img.data;
@@ -401,7 +454,7 @@
       applyVars();
       applyPageNoToggle();
 
-      const bgFileName = (dom.bgName.value||'').trim() || 'OFFICIAL.png';
+      const bgFileName = getBackgroundSrc();
       if (!renderedPages.length){
         setStatus('لا توجد صفحات جاهزة. اضغط “تجهيز الصفحات للطباعة” أولاً.', '');
         return;
@@ -564,6 +617,7 @@
       setDiag('');
     });
 
+    // Boot pdf.js (official-style)
     (async () => {
       try{
         setStatus('جارٍ تحميل pdf.js (ESM)...', '');
@@ -578,6 +632,11 @@
         setDiag('ضع pdf.mjs و pdf.worker.mjs بجانب هذا الملف (نفس المجلد) ثم أعد التشغيل على localhost.');
       }
     })();
+
+    // Cleanup object URLs on unload
+    window.addEventListener('beforeunload', () => {
+      try{ if (bgObjectUrl) URL.revokeObjectURL(bgObjectUrl); }catch(e){}
+    });
   </script>
 </body>
 </html>
