@@ -1,0 +1,583 @@
+<!DOCTYPE html>
+<html dir="rtl" lang="ar">
+<head>
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1"/>
+  <title>طباعة PDF على ورقة رسمية</title>
+
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css">
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;600;700;800;900&display=swap">
+
+  <style>
+    html, body{ height:100%; }
+    body{
+      font-family:'Cairo',system-ui,-apple-system,'Segoe UI',Roboto,Arial,sans-serif;
+      background:
+        radial-gradient(900px 500px at 15% 20%, rgba(34,197,94,.18), transparent 60%),
+        radial-gradient(900px 500px at 85% 50%, rgba(59,130,246,.14), transparent 62%),
+        linear-gradient(135deg, #0b1220 0%, #0f172a 60%, #0b1220 100%);
+      padding: 24px;
+    }
+
+    #ui .box{
+      background: rgba(255,255,255,.92);
+      backdrop-filter: blur(8px);
+      border: 1px solid rgba(15,23,42,.10);
+      padding: 22px;
+      border-radius: 18px;
+      box-shadow: 0 18px 60px rgba(0,0,0,.35);
+    }
+    #ui h4{ font-weight: 900; text-align:center; margin: 6px 0 18px; }
+    #ui label{ font-weight: 800; color:#0f172a; }
+    #ui .form-control, #ui .form-select{
+      border-radius: 12px;
+      border: 1px solid rgba(15,23,42,.14);
+      padding: 10px 12px;
+      box-shadow:none;
+    }
+    #ui .form-control:focus, #ui .form-select:focus{
+      border-color: rgba(13,110,253,.55);
+      box-shadow: 0 0 0 4px rgba(13,110,253,.15);
+    }
+    #ui .hint{
+      font-size: 12px;
+      color: #475569;
+      font-weight: 700;
+      margin-top: 6px;
+    }
+    #ui .status{
+      border: 1px dashed rgba(15,23,42,.25);
+      border-radius: 14px;
+      padding: 10px 12px;
+      background: linear-gradient(180deg,#fff 0%,#f8fafc 100%);
+      font-weight: 800;
+      display:flex;
+      align-items:center;
+      justify-content:space-between;
+      gap: 10px;
+      min-height: 46px;
+      flex-wrap: wrap;
+    }
+
+    :root{
+      --safe-top: 0mm;      /* ✅ default changed */
+      --safe-right: 16mm;
+      --safe-bottom: 24mm;
+      --safe-left: 24mm;
+      --content-scale: 1.25; /* ✅ default changed */
+      --content-x: -25mm;    /* ✅ default changed */
+      --content-y: 0mm;
+    }
+
+    /* إخفاء ترقيم الصفحات عند التعطيل */
+    .hide-page-no #printPages .page-no{ display:none !important; }
+
+    #print{ display:none; }
+    @page{ size:A4; margin:0; }
+
+    #printPages .print-sheet{
+      width: 210mm;
+      height: 297mm;
+      margin: 0;
+      padding: 0;
+      position: relative;
+      overflow: hidden;
+      page-break-after: always;
+      break-after: page;
+      background: #fff;
+    }
+    #printPages .print-sheet:last-child{ page-break-after: auto; break-after: auto; }
+
+    #printPages .paper-bg{
+      position: absolute;
+      top: 0; left: 0;
+      width: 210mm;
+      height: 297mm;
+      z-index: 0;
+      pointer-events: none;
+      user-select: none;
+    }
+
+    #printPages .paper-content{
+      position: absolute;
+      top: 0; left: 0; right: 0; bottom: 0;
+      padding: var(--safe-top) var(--safe-right) var(--safe-bottom) var(--safe-left);
+      z-index: 1;
+      box-sizing: border-box;
+      overflow: hidden;
+    }
+
+    #printPages .pdf-page-img{
+      width: 100%;
+      height: 100%;
+      display:block;
+      object-fit: contain;
+      transform: translate(var(--content-x), var(--content-y)) scale(var(--content-scale));
+      transform-origin: top left;
+    }
+
+    #printPages .page-no{
+      position: absolute;
+      left: 25mm;
+      bottom: 30mm;
+      z-index: 5;
+      font-size: 10.5pt;
+      font-weight: 900;
+      color: #111827;
+      white-space: nowrap;
+      text-align: left;
+      direction: rtl;
+    }
+
+    @media print{
+      #ui{ display:none !important; }
+      #print{ display:block !important; }
+      *{-webkit-print-color-adjust:exact; print-color-adjust:exact;}
+      html, body{ margin:0 !important; padding:0 !important; background:#fff !important; }
+    }
+
+    @media (max-width: 768px){
+      body{ padding: 12px; }
+      #ui .box{ padding: 16px; }
+    }
+  </style>
+</head>
+
+<body>
+
+  <div id="ui">
+    <div class="container box">
+      <h4>طباعة PDF على ورقة رسمية PNG</h4>
+
+      <div class="row g-3">
+        <div class="col-md-6">
+          <label class="mb-2">ملف الورقة الرسمية (PNG) داخل نفس المجلد</label>
+          <input id="bgName" class="form-control" value="OFFICIAL.png" placeholder="مثال: ORN paper.png" />
+          <div class="hint">ضع ملف الـ PNG بجوار ملف الـ HTML بنفس الاسم المكتوب هنا.</div>
+        </div>
+
+        <div class="col-md-6">
+          <label class="mb-2">رفع ملف PDF (خلفية بيضاء)</label>
+          <input id="pdfInput" class="form-control" type="file" accept="application/pdf" />
+          <div class="hint">يفضل تشغيل الصفحة على localhost (Chrome/Edge).</div>
+        </div>
+
+        <div class="col-12">
+          <div class="row g-2">
+            <div class="col-md-3">
+              <label class="mb-2">Safe Top (mm)</label>
+              <input id="safeTop" class="form-control" type="number" value="0" min="0" step="1" />
+            </div>
+            <div class="col-md-3">
+              <label class="mb-2">Safe Right (mm)</label>
+              <input id="safeRight" class="form-control" type="number" value="16" min="0" step="1" />
+            </div>
+            <div class="col-md-3">
+              <label class="mb-2">Safe Bottom (mm)</label>
+              <input id="safeBottom" class="form-control" type="number" value="24" min="0" step="1" />
+            </div>
+            <div class="col-md-3">
+              <label class="mb-2">Safe Left (mm)</label>
+              <input id="safeLeft" class="form-control" type="number" value="24" min="0" step="1" />
+            </div>
+          </div>
+        </div>
+
+        <div class="col-12">
+          <div class="row g-2">
+            <div class="col-md-3">
+              <label class="mb-2">Scale</label>
+              <input id="contentScale" class="form-control" type="number" value="1.25" step="0.01" />
+            </div>
+            <div class="col-md-3">
+              <label class="mb-2">Move X (mm)</label>
+              <input id="contentX" class="form-control" type="number" value="-25" step="1" />
+            </div>
+            <div class="col-md-3">
+              <label class="mb-2">Move Y (mm)</label>
+              <input id="contentY" class="form-control" type="number" value="0" step="1" />
+            </div>
+            <div class="col-md-3">
+              <label class="mb-2">Quality (1..3)</label>
+              <input id="quality" class="form-control" type="number" value="2" min="1" max="3" step="1" />
+            </div>
+          </div>
+          <div class="hint">Quality 2 مناسب لمستندات 2-5 صفحات. زوّد لـ 3 لو عايز وضوح أعلى.</div>
+        </div>
+
+        <div class="col-12">
+          <div class="row g-2 align-items-end">
+            <div class="col-md-3">
+              <label class="mb-2">ترقيم الصفحات (اختياري)</label>
+              <select id="showPageNo" class="form-select">
+                <option value="off" selected>إيقاف</option>
+                <option value="on">تشغيل</option>
+              </select>
+              <div class="hint">إظهار/إخفاء: صفحة كذا من كذا</div>
+            </div>
+          </div>
+        </div>
+
+        <div class="col-12">
+          <div class="row g-2 align-items-end">
+            <div class="col-md-3">
+              <label class="mb-2">إزالة الأبيض (لإظهار الورقة تحت النص)</label>
+              <select id="removeWhite" class="form-select">
+                <option value="on" selected>تشغيل</option>
+                <option value="off">إيقاف</option>
+              </select>
+              <div class="hint">يحافظ على الأحمر/الأزرق قدر الإمكان.</div>
+            </div>
+            <div class="col-md-3">
+              <label class="mb-2">Threshold (0..120)</label>
+              <input id="whiteThreshold" class="form-control" type="number" value="45" min="0" max="120" step="1" />
+              <div class="hint">أعلى = إزالة أبيض أكثر.</div>
+            </div>
+            <div class="col-md-3">
+              <label class="mb-2">Softness (0..120)</label>
+              <input id="whiteSoftness" class="form-control" type="number" value="25" min="0" max="120" step="1" />
+              <div class="hint">نعومة الحواف.</div>
+            </div>
+            <div class="col-md-3">
+              <label class="mb-2">Sat Limit (0..80)</label>
+              <input id="satLimit" class="form-control" type="number" value="18" min="0" max="80" step="1" />
+              <div class="hint">زوّدها لو ألوان فاتحة بتختفي.</div>
+            </div>
+          </div>
+        </div>
+
+        <div class="col-12">
+          <div class="d-flex flex-wrap gap-2">
+            <button id="btnBuild" class="btn btn-success">تجهيز الصفحات للطباعة</button>
+            <button id="btnPrint" class="btn btn-dark" disabled>طباعة / Save as PDF</button>
+            <button id="btnClear" class="btn btn-outline-secondary" type="button">مسح / إعادة</button>
+          </div>
+        </div>
+
+        <div class="col-12">
+          <div id="status" class="status">
+            <span id="statusText">جارٍ تهيئة pdf.js...</span>
+            <small id="statusMeta"></small>
+            <small id="statusDiag" style="color:#b91c1c"></small>
+          </div>
+        </div>
+
+        <div class="col-12">
+          <div class="hint">
+            <b>مهم:</b> نفس أسلوب المثال الرسمي للمكتبة: <code>pdf.mjs</code> + <code>pdf.worker.mjs</code>.
+          </div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+  <div id="print">
+    <div id="printPages"></div>
+  </div>
+
+  <script type="module">
+    'use strict';
+
+    const $ = (id) => document.getElementById(id);
+
+    const dom = {
+      bgName: $('bgName'),
+      pdfInput: $('pdfInput'),
+      safeTop: $('safeTop'),
+      safeRight: $('safeRight'),
+      safeBottom: $('safeBottom'),
+      safeLeft: $('safeLeft'),
+      contentScale: $('contentScale'),
+      contentX: $('contentX'),
+      contentY: $('contentY'),
+      quality: $('quality'),
+      showPageNo: $('showPageNo'),
+      removeWhite: $('removeWhite'),
+      whiteThreshold: $('whiteThreshold'),
+      whiteSoftness: $('whiteSoftness'),
+      satLimit: $('satLimit'),
+      btnBuild: $('btnBuild'),
+      btnPrint: $('btnPrint'),
+      btnClear: $('btnClear'),
+      statusText: $('statusText'),
+      statusMeta: $('statusMeta'),
+      statusDiag: $('statusDiag'),
+      printPages: $('printPages'),
+    };
+
+    function setStatus(text, meta=''){
+      dom.statusText.textContent = text;
+      dom.statusMeta.textContent = meta;
+    }
+    function setDiag(text=''){
+      dom.statusDiag.textContent = text;
+    }
+
+    function clamp(n, a, b){ return Math.min(b, Math.max(a, n)); }
+
+    function applyVars(){
+      document.documentElement.style.setProperty('--safe-top', (Number(dom.safeTop.value)||0) + 'mm');
+      document.documentElement.style.setProperty('--safe-right', (Number(dom.safeRight.value)||0) + 'mm');
+      document.documentElement.style.setProperty('--safe-bottom', (Number(dom.safeBottom.value)||0) + 'mm');
+      document.documentElement.style.setProperty('--safe-left', (Number(dom.safeLeft.value)||0) + 'mm');
+      document.documentElement.style.setProperty('--content-scale', String(Number(dom.contentScale.value)||1));
+      document.documentElement.style.setProperty('--content-x', (Number(dom.contentX.value)||0) + 'mm');
+      document.documentElement.style.setProperty('--content-y', (Number(dom.contentY.value)||0) + 'mm');
+    }
+
+    function applyPageNoToggle(){
+      const on = (dom.showPageNo && dom.showPageNo.value === 'on');
+      document.documentElement.classList.toggle('hide-page-no', !on);
+    }
+
+    ['safeTop','safeRight','safeBottom','safeLeft','contentScale','contentX','contentY'].forEach(k => dom[k].addEventListener('input', applyVars));
+    if (dom.showPageNo) dom.showPageNo.addEventListener('change', applyPageNoToggle);
+
+    applyVars();
+    applyPageNoToggle();
+
+    // Official-style module loading (local first)
+    const localPdfModule = './pdf.mjs';
+    const localWorker = './pdf.worker.mjs';
+    const remotePdfModule = '//mozilla.github.io/pdf.js/build/pdf.mjs';
+    const remoteWorker = '//mozilla.github.io/pdf.js/build/pdf.worker.mjs';
+
+    async function loadPdfJsModule(){
+      try{
+        await import(localPdfModule);
+        if (globalThis.pdfjsLib) return { pdfjsLib: globalThis.pdfjsLib, workerSrc: localWorker, source: 'local' };
+      }catch(e){ /* ignore */ }
+
+      await import(remotePdfModule);
+      if (globalThis.pdfjsLib) return { pdfjsLib: globalThis.pdfjsLib, workerSrc: remoteWorker, source: 'remote' };
+
+      throw new Error('pdfjsLib not found');
+    }
+
+    // Remove-white algorithm (preserve colors):
+    // Remove pixels close to white AND with low saturation.
+    function removeWhiteBackground(ctx, w, h, threshold, softness, satLimit){
+      const img = ctx.getImageData(0, 0, w, h);
+      const d = img.data;
+      const thr = clamp(threshold, 0, 255);
+      const soft = clamp(softness, 0, 255);
+      const satL = clamp(satLimit, 0, 255);
+
+      for (let i = 0; i < d.length; i += 4){
+        const r = d[i], g = d[i+1], b = d[i+2];
+        const maxc = r > g ? (r > b ? r : b) : (g > b ? g : b);
+        const minc = r < g ? (r < b ? r : b) : (g < b ? g : b);
+        const sat = maxc - minc;
+
+        const dr = 255 - r, dg = 255 - g, db = 255 - b;
+        const dist = Math.sqrt(dr*dr + dg*dg + db*db);
+
+        if (sat <= satL && dist <= (thr + soft)){
+          let a;
+          if (dist <= thr) a = 0;
+          else if (soft <= 0) a = 0;
+          else a = Math.round(255 * (dist - thr) / soft);
+          d[i+3] = a;
+        }
+      }
+
+      ctx.putImageData(img, 0, 0);
+    }
+
+    let pdfFile = null;
+    let pdfDoc = null;
+    let renderedPages = [];
+    let pdfjsLib = null;
+
+    function mmToPx(mm, dpi){ return (mm / 25.4) * dpi; }
+
+    async function loadPdfFromFile(file){
+      const buf = await file.arrayBuffer();
+      return pdfjsLib.getDocument({ data: buf }).promise;
+    }
+
+    function buildPrintPages(){
+      applyVars();
+      applyPageNoToggle();
+
+      const bgFileName = (dom.bgName.value||'').trim() || 'OFFICIAL.png';
+      if (!renderedPages.length){
+        setStatus('لا توجد صفحات جاهزة. اضغط “تجهيز الصفحات للطباعة” أولاً.', '');
+        return;
+      }
+
+      dom.printPages.innerHTML = '';
+      const total = renderedPages.length;
+      const frag = document.createDocumentFragment();
+
+      const showNo = (dom.showPageNo && dom.showPageNo.value === 'on');
+
+      for (let i = 0; i < total; i++){
+        const sheet = document.createElement('div');
+        sheet.className = 'print-sheet';
+
+        const bg = document.createElement('img');
+        bg.className = 'paper-bg';
+        bg.alt = 'Official Paper';
+        bg.src = bgFileName;
+
+        const content = document.createElement('div');
+        content.className = 'paper-content';
+
+        const img = document.createElement('img');
+        img.className = 'pdf-page-img';
+        img.alt = 'PDF Page ' + (i+1);
+        img.src = renderedPages[i];
+        content.appendChild(img);
+
+        sheet.appendChild(bg);
+
+        if (showNo){
+          const pn = document.createElement('div');
+          pn.className = 'page-no';
+          pn.textContent = `صفحة ${i+1} من ${total}`;
+          sheet.appendChild(pn);
+        }
+
+        sheet.appendChild(content);
+        frag.appendChild(sheet);
+      }
+
+      dom.printPages.appendChild(frag);
+      setStatus('تم بناء صفحات الطباعة ✅', 'اضغط “طباعة / Save as PDF”');
+    }
+
+    async function renderAllPages(){
+      if (!pdfFile) throw new Error('ارفع PDF أولاً');
+
+      setStatus('جارٍ تحميل الـ PDF...', '');
+      pdfDoc = await loadPdfFromFile(pdfFile);
+
+      const total = pdfDoc.numPages;
+      const q = clamp(Number(dom.quality.value)||2, 1, 3);
+
+      const A4_W = 210, A4_H = 297;
+      const sTop = Number(dom.safeTop.value)||0;
+      const sRight = Number(dom.safeRight.value)||0;
+      const sBottom = Number(dom.safeBottom.value)||0;
+      const sLeft = Number(dom.safeLeft.value)||0;
+
+      const safeWmm = Math.max(10, A4_W - sLeft - sRight);
+      const safeHmm = Math.max(10, A4_H - sTop - sBottom);
+
+      const BASE_DPI = 96;
+      const RENDER_DPI = BASE_DPI * q;
+      const safeWpx = mmToPx(safeWmm, RENDER_DPI);
+      const safeHpx = mmToPx(safeHmm, RENDER_DPI);
+
+      const doRemove = (dom.removeWhite.value === 'on');
+      const thr = Number(dom.whiteThreshold.value)||45;
+      const soft = Number(dom.whiteSoftness.value)||25;
+      const satL = Number(dom.satLimit.value)||18;
+
+      renderedPages = new Array(total);
+
+      for (let p = 1; p <= total; p++){
+        setStatus(`جارٍ تجهيز الصفحات... (${p}/${total})`, doRemove ? 'إزالة الأبيض: تشغيل' : 'إزالة الأبيض: إيقاف');
+        const page = await pdfDoc.getPage(p);
+
+        const vp1 = page.getViewport({ scale: 1.0 });
+        const scaleFit = Math.min(safeWpx / vp1.width, safeHpx / vp1.height);
+        const viewport = page.getViewport({ scale: scaleFit });
+
+        const canvas = document.createElement('canvas');
+        const ctx = canvas.getContext('2d', { alpha: true });
+
+        canvas.width = Math.max(1, Math.floor(viewport.width));
+        canvas.height = Math.max(1, Math.floor(viewport.height));
+
+        await page.render({ canvasContext: ctx, viewport }).promise;
+
+        if (doRemove){
+          removeWhiteBackground(ctx, canvas.width, canvas.height, thr, soft, satL);
+        }
+
+        renderedPages[p-1] = canvas.toDataURL('image/png');
+        canvas.width = 1; canvas.height = 1;
+      }
+
+      setStatus('تم تجهيز الصفحات ✅', `عدد الصفحات: ${total}`);
+      dom.btnPrint.disabled = false;
+      setDiag('');
+    }
+
+    dom.pdfInput.addEventListener('change', (e) => {
+      const f = e.target.files && e.target.files[0];
+      if (!f) return;
+      if (f.type !== 'application/pdf'){
+        setStatus('الملف ليس PDF.', '');
+        setDiag('');
+        pdfFile = null;
+        return;
+      }
+      pdfFile = f;
+      pdfDoc = null;
+      renderedPages = [];
+      dom.btnPrint.disabled = true;
+      dom.printPages.innerHTML = '';
+      setStatus('تم اختيار PDF: ' + f.name, 'اضغط “تجهيز الصفحات للطباعة”');
+      setDiag('');
+    });
+
+    dom.btnBuild.addEventListener('click', async () => {
+      try{
+        if (!pdfFile){
+          setStatus('ارفع ملف PDF أولاً.', '');
+          return;
+        }
+        dom.btnBuild.disabled = true;
+        dom.btnPrint.disabled = true;
+        await renderAllPages();
+        buildPrintPages();
+      }catch(err){
+        console.error(err);
+        setStatus('خطأ أثناء التجهيز: ' + (err.message||err), '');
+        setDiag('إذا ظهر خطأ worker: تأكد من وجود pdf.worker.mjs بجانب الملف أو السماح بالوصول إلى mozilla.github.io.');
+      }finally{
+        dom.btnBuild.disabled = false;
+      }
+    });
+
+    dom.btnPrint.addEventListener('click', () => {
+      if (!renderedPages.length){
+        setStatus('لا توجد صفحات جاهزة للطباعة.', '');
+        return;
+      }
+      buildPrintPages();
+      window.print();
+    });
+
+    dom.btnClear.addEventListener('click', () => {
+      pdfFile = null;
+      pdfDoc = null;
+      renderedPages = [];
+      dom.pdfInput.value = '';
+      dom.btnPrint.disabled = true;
+      dom.printPages.innerHTML = '';
+      setStatus('تم المسح — ارفع PDF ثم اضغط “تجهيز الصفحات للطباعة”.', '');
+      setDiag('');
+    });
+
+    (async () => {
+      try{
+        setStatus('جارٍ تحميل pdf.js (ESM)...', '');
+        const loaded = await loadPdfJsModule();
+        pdfjsLib = loaded.pdfjsLib;
+        pdfjsLib.GlobalWorkerOptions.workerSrc = loaded.workerSrc;
+        setStatus('تم تحميل pdf.js ✅', loaded.source === 'local' ? 'مصدر: محلي (pdf.mjs)' : 'مصدر: mozilla.github.io');
+        setDiag('');
+      }catch(e){
+        console.error(e);
+        setStatus('pdf.js غير متاح', '');
+        setDiag('ضع pdf.mjs و pdf.worker.mjs بجانب هذا الملف (نفس المجلد) ثم أعد التشغيل على localhost.');
+      }
+    })();
+  </script>
+</body>
+</html>
